@@ -25,8 +25,12 @@
 #define DRM_FOURCC_H
 
 #include <stdint.h>
+
+#ifndef _UAPI_ASM_GENERIC_INT_LL64_H
+// Already defined in Android
 typedef uint64_t __u64;
 typedef uint32_t __u32;
+#endif
 
 #if defined(__cplusplus)
 extern "C" {
