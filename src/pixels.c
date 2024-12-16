@@ -19,7 +19,7 @@
 
 #include <stdlib.h>
 #include <assert.h>
-#include <libdrm/drm_fourcc.h>
+#include "sys/drm_fourcc.h"
 #include <math.h>
 
 #define POPCOUNT(x) __builtin_popcount(x)

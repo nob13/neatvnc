@@ -25,7 +25,7 @@
 #include <aml.h>
 #include <pixman.h>
 #include <assert.h>
-#include <libdrm/drm_fourcc.h>
+#include "sys/drm_fourcc.h"
 
 struct fb_side_data {
 	struct pixman_region16 buffer_damage;
