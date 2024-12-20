@@ -42,7 +42,7 @@
 #include <sys/param.h>
 #include <assert.h>
 #include <aml.h>
-#include "sys/drm_fourcc.h"
+#include <libdrm/drm_fourcc.h>
 #include <pixman.h>
 #include <pthread.h>
 #include <errno.h>

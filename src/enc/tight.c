@@ -35,7 +35,7 @@
 #include <pthread.h>
 #include <assert.h>
 #include <aml.h>
-#include "sys/drm_fourcc.h"
+#include <libdrm/drm_fourcc.h>
 #ifdef HAVE_JPEG
 #include <turbojpeg.h>
 #endif
