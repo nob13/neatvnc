@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 - 2021 Andri Yngvason
+ * Copyright (c) 2019 - 2024 Andri Yngvason
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -14,24 +14,60 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include "zrle.h"
+#include "enc/encoder.h"
 #include "rfb-proto.h"
 #include "vec.h"
 #include "neatvnc.h"
 #include "pixels.h"
 
+#include <aml.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <libdrm/drm_fourcc.h>
 #include <pixman.h>
 #include <time.h>
 #include <inttypes.h>
+#include <math.h>
+
+struct value_count {
+	uint32_t value;
+	uint32_t count;
+};
+
+struct pair_count {
+	uint64_t pair;
+	uint32_t count;
+};
+
+struct stopwatch {
+	uint64_t cpu;
+	uint64_t real;
+};
+
+static struct encoded_frame* encoded_frame;
 
 static uint64_t gettime_us(clockid_t clock)
 {
 	struct timespec ts = { 0 };
 	clock_gettime(clock, &ts);
 	return ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000ULL;
+}
+
+static void stopwatch_start(struct stopwatch* self)
+{
+	self->real = gettime_us(CLOCK_MONOTONIC);
+	self->cpu = gettime_us(CLOCK_PROCESS_CPUTIME_ID);
+}
+
+static void stopwatch_stop(const struct stopwatch* self, const char* report)
+{
+	uint64_t real_stop = gettime_us(CLOCK_MONOTONIC);
+	uint64_t cpu_stop = gettime_us(CLOCK_PROCESS_CPUTIME_ID);
+	uint64_t dt_real = real_stop - self->real;
+	uint64_t dt_cpu = cpu_stop - self->cpu;
+	double cpu_util = (double)dt_cpu / dt_real;
+	printf("\t%s took %"PRIu64" µs with %.0f%% CPU utilisation\n", report,
+			dt_real, round(cpu_util * 100.0));
 }
 
 #pragma GCC push_options
@@ -42,7 +78,113 @@ static void memcpy_unoptimized(void* dst, const void* src, size_t len)
 }
 #pragma GCC pop_options
 
+static int compare_u32(const void* pa, const void* pb) {
+	uint32_t a = *(const uint32_t*)pa;
+	uint32_t b = *(const uint32_t*)pb;
+	return a < b ? -1 : a > b;
+}
+
+static int compare_u64(const void* pa, const void* pb) {
+	uint64_t a = *(const uint64_t*)pa;
+	uint64_t b = *(const uint64_t*)pb;
+	return a < b ? -1 : a > b;
+}
+
+static double calc_first_order_entropy(const uint32_t* data, size_t length,
+		int* n_unique_colours)
+{
+	if (length == 0)
+		return 0.0;
+
+	uint32_t* data_copy = malloc(length * sizeof(data_copy[0]));
+	assert(data_copy);
+	memcpy(data_copy, data, length * sizeof(data_copy[0]));
+	qsort(data_copy, length, sizeof(data_copy[0]), compare_u32);
+
+	struct value_count* value_counts = malloc(length * sizeof(value_counts[0]));
+	assert(value_counts);
+
+	value_counts[0].value = data_copy[0];
+	value_counts[0].count = 1;
+	size_t value_count_length = 1;
+
+	for (size_t i = 1; i < length; i++) {
+		if (value_counts[value_count_length - 1].value == data_copy[i]) {
+			value_counts[value_count_length - 1].count++;
+		} else {
+			value_counts[value_count_length].value = data_copy[i];
+			value_counts[value_count_length].count = 1;
+			value_count_length++;
+		}
+	}
+
+	double entropy = 0.0;
+	for (size_t i = 0; i < value_count_length; i++) {
+		double p = (double)value_counts[i].count / length;
+		entropy -= p * log2(p);
+	}
+
+	free(value_counts);
+	free(data_copy);
+
+	if (n_unique_colours)
+		*n_unique_colours = value_count_length;
+
+	return entropy;
+}
+
+static double calc_second_order_entropy(const uint32_t* data, size_t length)
+{
+	if (length < 2)
+		return 0.0;
+
+	size_t n_pairs = length - 1;
+
+	uint64_t* pairs = malloc(n_pairs * sizeof(pairs[0]));
+	assert(pairs);
+
+	for (size_t i = 0; i < n_pairs; i++)
+		pairs[i] = ((uint64_t)data[i] << 32) | data[i + 1];
+
+	qsort(pairs, length - 1, sizeof(pairs[0]), compare_u64);
+
+	struct pair_count* pair_counts = malloc(n_pairs * sizeof(pair_counts[0]));
+	assert(pair_counts);
+
+	pair_counts[0].pair = pairs[0];
+	pair_counts[0].count = 1;
+	size_t pair_count_length = 1;
+
+	for (size_t i = 1; i < n_pairs; i++) {
+		if (pair_counts[pair_count_length - 1].pair == pairs[i]) {
+			pair_counts[pair_count_length - 1].count++;
+		} else {
+			pair_counts[pair_count_length].pair = pairs[i];
+			pair_counts[pair_count_length].count = 1;
+			pair_count_length++;
+		}
+	}
+
+	double entropy = 0.0;
+	for (size_t i = 0; i < pair_count_length; i++) {
+		double p = (double)pair_counts[i].count / (length - 1);
+		entropy -= p * log2(p);
+	}
+
+	free(pairs);
+	free(pair_counts);
+
+	return entropy;
+}
+
 struct nvnc_fb* read_png_file(const char *filename);
+
+static void on_encoding_done(struct encoder* enc, struct encoded_frame* frame)
+{
+	encoded_frame = frame;
+	encoded_frame_ref(frame);
+	aml_exit(aml_get_default());
+}
 
 static int run_benchmark(const char *image)
 {
@@ -51,6 +193,10 @@ static int run_benchmark(const char *image)
 	struct nvnc_fb* fb = read_png_file(image);
 	if (!fb)
 		return -1;
+
+	printf("%s:\n", image);
+
+	struct stopwatch stopwatch;
 
 	void *addr = nvnc_fb_get_addr(fb);
 	int width = nvnc_fb_get_width(fb);
@@ -65,45 +211,60 @@ static int run_benchmark(const char *image)
 
 	pixman_region_union_rect(&region, &region, 0, 0, width, height);
 
-	struct vec frame;
-	vec_init(&frame, stride * height * 3 / 2);
+	struct encoder* enc = encoder_new(RFB_ENCODING_ZRLE, width, height);
+	assert(enc);
 
-	z_stream zs = { 0 };
+	encoder_set_quality(enc, 10);
 
-	deflateInit2(&zs, /* compression level: */ 1,
-			/*            method: */ Z_DEFLATED,
-			/*       window bits: */ 15,
-			/*         mem level: */ 9,
-			/*          strategy: */ Z_DEFAULT_STRATEGY);
+	enc->on_done = on_encoding_done;
 
-	void *dummy = malloc(stride * height * 4);
+	encoder_set_output_format(enc, &pixfmt);
+
+	void* dummy = malloc(stride * height * 4);
 	if (!dummy)
 		goto failure;
 
-	uint64_t start_time = gettime_us(CLOCK_PROCESS_CPUTIME_ID);
+	stopwatch_start(&stopwatch);
 
 	memcpy_unoptimized(dummy, addr, stride * height * 4);
 
-	uint64_t end_time = gettime_us(CLOCK_PROCESS_CPUTIME_ID);
-	printf("memcpy baseline for %s took %"PRIu64" micro seconds\n", image,
-			end_time - start_time);
+	stopwatch_stop(&stopwatch, "memcpy baseline");
 
 	free(dummy);
 
-	start_time = gettime_us(CLOCK_PROCESS_CPUTIME_ID);
-	rc = zrle_encode_frame(&zs, &frame, &pixfmt, fb, &pixfmt, &region);
+	stopwatch_start(&stopwatch);
+	rc = encoder_encode(enc, fb, &region);
 
-	end_time = gettime_us(CLOCK_PROCESS_CPUTIME_ID);
-	printf("Encoding %s took %"PRIu64" micro seconds\n", image,
-			end_time - start_time);
+	aml_run(aml_get_default());
+
+	assert(encoded_frame);
+
+	stopwatch_stop(&stopwatch, "Encoding");
 
 	double orig_size = stride * height * 4;
-	double compressed_size = frame.len;
+	double compressed_size = encoded_frame->buf.size;
 
 	double reduction = (orig_size - compressed_size) / orig_size;
-	printf("Size reduction: %.1f %%\n", reduction * 100.0);
+	printf("\tSize reduction: %.1f%%\n", reduction * 100.0);
 
-	deflateEnd(&zs);
+	int n_unique_colours;
+	double entropy = calc_first_order_entropy(addr, orig_size / 4,
+			&n_unique_colours);
+	double entropy_reduction = 1.0 - entropy / 32.0;
+	printf("\tTheoretical first order entropy coding reduction: %.1f%%. (%.1f bits / 32)\n",
+			entropy_reduction * 100.0, entropy);
+
+	double second_entropy = calc_second_order_entropy(addr, orig_size / 4);
+	// A symbol pair is 64 bits long
+	double second_reduction = 1.0 - second_entropy / 64.0;
+	printf("\tTheoretical second order entropy coding reduction: %.1f%%. (%.1f bits / 64)\n",
+			second_reduction * 100.0, second_entropy);
+
+	printf("\tNumber of unique colours: %d\n", n_unique_colours);
+
+	printf("\n");
+
+	encoder_unref(enc);
 
 	if (rc < 0)
 		goto failure;
@@ -111,7 +272,7 @@ static int run_benchmark(const char *image)
 	rc = 0;
 failure:
 	pixman_region_fini(&region);
-	vec_destroy(&frame);
+	encoded_frame_unref(encoded_frame);
 	nvnc_fb_unref(fb);
 	return 0;
 }
@@ -122,11 +283,19 @@ int main(int argc, char *argv[])
 
 	char *image = argv[1];
 
-	if (image)
-		return run_benchmark(image) < 0 ? 1 :0;
+	struct aml* aml = aml_new();
+	aml_set_default(aml);
 
-	rc |= run_benchmark("test-images/tv-test-card.png") < 0 ? 1 : 0;
-	rc |= run_benchmark("test-images/lena-soderberg.png") < 0 ? 1 : 0;
+	aml_require_workers(aml, -1);
+
+	if (image) {
+		rc = run_benchmark(image) < 0 ? 1 : 0;
+	} else {
+		rc |= run_benchmark("test-images/tv-test-card.png") < 0 ? 1 : 0;
+		rc |= run_benchmark("test-images/mandrill.png") < 0 ? 1 : 0;
+	}
+
+	aml_unref(aml);
 
 	return rc;
 }
