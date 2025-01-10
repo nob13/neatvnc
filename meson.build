@@ -198,6 +198,27 @@ if get_option('experimental')
 	config.set('ENABLE_EXPERIMENTAL', true)
 endif
 
+if cc.has_function(
+	'getrandom',
+	prefix: '#include <stddef.h>\n#include <sys/random.h>',
+	args: [ '-D_GNU_SOURCE' ]
+)
+	config.set('HAVE_GETRANDOM', true)
+endif
+
+if cc.has_function(
+	'arc4random_buf',
+	prefix: '#include <stdlib.h>'
+)
+	config.set('HAVE_ARC4RANDOM', true)
+endif
+
+if (config.has('HAVE_CRYPTO') and
+	not(config.has('HAVE_GETRANDOM') or config.has('HAVE_ARC4RANDOM'))
+)
+	error('No random generator available')
+endif
+
 configure_file(
 	output: 'config.h',
 	configuration: config,
