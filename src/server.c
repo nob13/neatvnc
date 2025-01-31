@@ -2486,7 +2486,7 @@ static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
 		switch (client->encodings[i]) {
 		case RFB_ENCODING_RAW:
 		case RFB_ENCODING_TIGHT:
-		case RFB_ENCODING_ZRLE:
+		// case RFB_ENCODING_ZRLE: // Disable Encoding due https://github.com/any1/neatvnc/issues/145
 			return client->encodings[i];
 #ifdef ENABLE_OPEN_H264
 		case RFB_ENCODING_OPEN_H264:
