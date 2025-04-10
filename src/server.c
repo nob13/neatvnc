@@ -64,6 +64,7 @@
 #include "crypto.h"
 #include "auth/apple-dh.h"
 #include "auth/rsa-aes.h"
+#include "auth/vnc_auth.h"
 #endif
 
 #ifndef DRM_FORMAT_INVALID
@@ -1998,6 +1999,8 @@ static int try_read_client_message(struct nvnc_client* client)
 		return vencrypt_handle_message(client);
 #endif
 #ifdef HAVE_CRYPTO
+	case VNC_CLIENT_STATE_WAITING_FOR_VNC_AUTH_RESPONSE:
+		return vnc_auth_handle_response(client);
 	case VNC_CLIENT_STATE_WAITING_FOR_APPLE_DH_RESPONSE:
 		return apple_dh_handle_response(client);
 	case VNC_CLIENT_STATE_WAITING_FOR_RSA_AES_PUBLIC_KEY:
@@ -3059,6 +3062,18 @@ static bool buffers_are_equal(struct nvnc_fb* a, struct nvnc_fb* b)
 		result &= data_a[i] == data_b[i];
 
 	return result;
+}
+
+EXPORT
+int nvnc_set_vnc_auth_passwd(struct nvnc* self, const char *password)
+{
+#ifdef HAVE_CRYPTO
+	char pass[VNC_AUTH_PASSWORD_LEN] = {0};
+	strncpy(pass, password, VNC_AUTH_PASSWORD_LEN);
+	vnc_auth_reverse_bits(self->vnc_auth_password, (uint8_t*)pass);
+	return 0;
+#endif
+	return -1;
 }
 
 EXPORT
