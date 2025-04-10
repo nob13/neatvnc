@@ -170,10 +170,11 @@ if cc.has_function(
 	have_random = true
 endif
 
-
+have_crypto = false
 if nettle.found() and hogweed.found() and gmp.found()
 	enable_websocket = true
 	config.set('HAVE_CRYPTO', true)
+    config.set('HAVE_VNC_AUTH', true)
 	cryptography = declare_dependency(
 		sources: [
 			'src/crypto/random.c',
@@ -193,6 +194,15 @@ if nettle.found() and hogweed.found() and gmp.found()
 	if not(have_random)
 		error('No random generator available')
 	endif
+	have_crypto = true
+endif
+
+if not(have_crypto) and have_random
+	config.set('HAVE_VNC_AUTH', true)
+	sources += [
+		'src/crypto/random.c',
+		'src/crypto/des.c',
+	]
 endif
 
 if host_system == 'linux' and get_option('systemtap') and cc.has_header('sys/sdt.h')
