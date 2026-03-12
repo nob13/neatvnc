@@ -22,6 +22,7 @@
 #include "crypto.h"
 #include "crypto/des-rfb.h"
 
+
 #include <string.h>
 
 bool des_auth_verify(const uint8_t* challenge, const uint8_t* response,
