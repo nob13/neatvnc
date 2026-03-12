@@ -9,6 +9,8 @@
  */
 #include "crypto.h"
 #include <assert.h>
+#include <crypto/des-rfb.h>
+#include <string.h>
 
 /*
  * Data Encryption Standard
@@ -326,7 +328,7 @@ static uint64_t maybe_swap(uint64_t x)
 #endif
 }
 
-void crypto_des_encrypt(uint8_t* key, uint8_t* dst, uint8_t* src, size_t len) {
+static void crypto_des_encrypt(uint8_t* key, uint8_t* dst, uint8_t* src, size_t len) {
   assert(len % 8 == 0);
 
   uint64_t key_casted = maybe_swap(*(const uint64_t*) key);
@@ -336,4 +338,28 @@ void crypto_des_encrypt(uint8_t* key, uint8_t* dst, uint8_t* src, size_t len) {
       uint64_t * dst_block = (uint64_t*) (dst + i);
       *dst_block = maybe_swap( des(maybe_swap(*block), key_casted, 'e'));
   }
+}
+
+static void des_rfb_reverse_bits(uint8_t* dst, const char* src)
+{
+	for (int i = 0; i < 8; i++) {
+		uint8_t b = (uint8_t)src[i];
+		b = ((b & 0xf0) >> 4) | ((b & 0x0f) << 4);
+		b = ((b & 0xcc) >> 2) | ((b & 0x33) << 2);
+		b = ((b & 0xaa) >> 1) | ((b & 0x55) << 1);
+		dst[i] = b;
+	}
+}
+
+void crypto_des_rfb_encrypt(uint8_t* dst, const uint8_t* src, const char* password) {
+	char key[8] = {};
+	size_t len = strlen(password);
+	if (len > 8)
+		len = 8;
+	memcpy(key, password, len);
+
+	uint8_t vnc_key[8];
+	des_rfb_reverse_bits(vnc_key, key);
+
+	crypto_des_encrypt(vnc_key, dst, (uint8_t*)src, 16);
 }
