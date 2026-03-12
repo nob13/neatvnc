@@ -186,6 +186,7 @@ if not(have_crypto) and have_random
 	sources += [
 		'src/crypto/random.c',
 		'src/crypto/des.c',
+		'src/auth/des-auth.c'
 	]
 endif
 

@@ -67,6 +67,10 @@
 #include "auth/rsa-aes.h"
 #endif
 
+#ifdef HAVE_VNC_AUTH
+#include "auth/des-auth.h"
+#endif
+
 #ifndef DRM_FORMAT_INVALID
 #define DRM_FORMAT_INVALID 0
 #endif
@@ -270,17 +274,21 @@ static void init_security_types(struct nvnc* server)
 		}
 #endif
 
+#ifdef HAVE_VNC_AUTH
+		if (!(server->auth_flags & NVNC_AUTH_REQUIRE_ENCRYPTION)) {
+			if (server->auth_flags & NVNC_AUTH_ALLOW_BROKEN_CRYPTO) {
+				ADD_SECURITY_TYPE(
+					RFB_SECURITY_TYPE_VNC_AUTH);
+			}
+		}
+#endif
+
 #ifdef HAVE_CRYPTO
 		ADD_SECURITY_TYPE(RFB_SECURITY_TYPE_RSA_AES256);
 		ADD_SECURITY_TYPE(RFB_SECURITY_TYPE_RSA_AES);
 
 		if (!(server->auth_flags & NVNC_AUTH_REQUIRE_ENCRYPTION)) {
 			ADD_SECURITY_TYPE(RFB_SECURITY_TYPE_APPLE_DH);
-
-			if (server->auth_flags & NVNC_AUTH_ALLOW_BROKEN_CRYPTO) {
-				ADD_SECURITY_TYPE(
-					RFB_SECURITY_TYPE_VNC_AUTH);
-			}
 		}
 #endif
 	} else {
@@ -337,7 +345,7 @@ static int on_version_message_rfb33(struct nvnc_client* client)
 
 	update_min_rtt(client);
 
-#ifdef HAVE_CRYPTO
+#ifdef HAVE_VNC_AUTH
 	if ((server->auth_flags & NVNC_AUTH_REQUIRE_AUTH) &&
 			(server->auth_flags & NVNC_AUTH_ALLOW_BROKEN_CRYPTO) &&
 			!(server->auth_flags & NVNC_AUTH_REQUIRE_ENCRYPTION)) {
@@ -433,11 +441,13 @@ static int on_security_message(struct nvnc_client* client)
 		client->state = VNC_CLIENT_STATE_WAITING_FOR_VENCRYPT_VERSION;
 		break;
 #endif
-#ifdef HAVE_CRYPTO
+#ifdef HAVE_VNC_AUTH
 	case RFB_SECURITY_TYPE_VNC_AUTH:
 		des_auth_send_challenge(client);
 		client->state = VNC_CLIENT_STATE_WAITING_FOR_DES_AUTH_RESPONSE;
 		break;
+#endif
+#ifdef HAVE_CRYPTO
 	case RFB_SECURITY_TYPE_APPLE_DH:
 		apple_dh_send_public_key(client);
 		client->state = VNC_CLIENT_STATE_WAITING_FOR_APPLE_DH_RESPONSE;
@@ -2087,9 +2097,11 @@ static int try_read_client_message(struct nvnc_client* client)
 	case VNC_CLIENT_STATE_WAITING_FOR_VENCRYPT_PLAIN_AUTH:
 		return vencrypt_handle_message(client);
 #endif
-#ifdef HAVE_CRYPTO
+#ifdef HAVE_VNC_AUTH
 	case VNC_CLIENT_STATE_WAITING_FOR_DES_AUTH_RESPONSE:
 		return des_auth_handle_response(client);
+#endif
+#ifdef HAVE_CRYPTO
 	case VNC_CLIENT_STATE_WAITING_FOR_APPLE_DH_RESPONSE:
 		return apple_dh_handle_response(client);
 	case VNC_CLIENT_STATE_WAITING_FOR_RSA_AES_PUBLIC_KEY:
@@ -3120,7 +3132,7 @@ EXPORT
 int nvnc_enable_auth(struct nvnc* self, enum nvnc_auth_flags flags,
 		nvnc_auth_fn auth_fn, void* userdata)
 {
-#if defined(ENABLE_TLS) || defined(HAVE_CRYPTO)
+#if defined(ENABLE_TLS) || defined(HAVE_CRYPTO) || defined(HAVE_VNC_AUTH)
 	self->auth_flags = flags;
 	self->auth_fn = auth_fn;
 	self->auth_ud = userdata;
@@ -3268,7 +3280,7 @@ bool nvnc_auth_creds_verify(const struct nvnc_auth_creds* creds,
 		if (!creds->password)
 			return false;
 		return strcmp(creds->password, password) == 0;
-#ifdef HAVE_CRYPTO
+#ifdef HAVE_VNC_AUTH
 	case NVNC_AUTH_CREDS_DES:
 		return des_auth_verify(creds->des.challenge,
 				creds->des.response, password);
