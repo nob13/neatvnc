@@ -785,9 +785,17 @@ struct nvnc_display* nvnc_desktop_layout_get_display(
 		const struct nvnc_desktop_layout*, uint8_t display_index);
 
 /**
- * Broadcast clipboard text to all connected clients.
+ * Broadcast clipboard text to all connected clients. The text is sent as-is;
+ * legacy clients expect Latin-1 and extended-clipboard clients UTF-8.
  */
 void nvnc_send_cut_text(struct nvnc*, const char* text, uint32_t len);
+
+/**
+ * Broadcast UTF-8 clipboard text to all connected clients. The text is sent
+ * as UTF-8 to extended-clipboard clients and converted to Latin-1 for legacy
+ * clients; code points that do not fit in Latin-1 are replaced with '?'.
+ */
+void nvnc_send_cut_text_utf8(struct nvnc*, const char* text, uint32_t len);
 
 /**
  * Set the cursor image and hotspot; set is_damaged to trigger an update.
