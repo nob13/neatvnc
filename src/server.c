@@ -1506,6 +1506,54 @@ static char* crlf_to_lf(const char* src, size_t len)
 	return lf_buf;
 }
 
+/* Convert Latin-1 to UTF-8. Returns a NUL-terminated string, or NULL on OOM. */
+static char* latin1_to_utf8(const char* src, size_t len, size_t* out_len)
+{
+	char* dst = malloc(len * 2 + 1);
+	if (!dst)
+		return NULL;
+
+	size_t o = 0;
+	for (size_t i = 0; i < len; ++i) {
+		uint8_t c = src[i];
+		if (c < 0x80) {
+			dst[o++] = c;
+		} else {
+			dst[o++] = 0xc0 | (c >> 6);
+			dst[o++] = 0x80 | (c & 0x3f);
+		}
+	}
+
+	dst[o] = 0;
+	*out_len = o;
+	return dst;
+}
+
+/* Deliver received clipboard text to the registered handler. is_utf8 tells
+ * which encoding the text is in; if the handler asked for UTF-8 but the text
+ * is Latin-1, it is converted first. */
+static void notify_cut_text(struct nvnc_client* client, const char* text,
+		uint32_t len, bool is_utf8)
+{
+	struct nvnc* server = client->server;
+
+	if (!server->cut_text_fn)
+		return;
+
+	if (server->cut_text_utf8 && !is_utf8) {
+		size_t utf8_len;
+		char* utf8 = latin1_to_utf8(text, len, &utf8_len);
+		if (!utf8) {
+			nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+			return;
+		}
+		server->cut_text_fn(client, utf8, utf8_len);
+		free(utf8);
+	} else {
+		server->cut_text_fn(client, text, len);
+	}
+}
+
 static void process_client_ext_clipboard_provide(struct nvnc_client* client,
 		unsigned char* zlib_data, size_t zlib_len)
 {
@@ -1575,9 +1623,7 @@ static void process_client_ext_clipboard_provide(struct nvnc_client* client,
 	}
 	size_t converted_len = strlen(converted_buf);
 
-	nvnc_cut_text_fn fn = client->server->cut_text_fn;
-	if (fn)
-		fn(client, converted_buf, converted_len);
+	notify_cut_text(client, converted_buf, converted_len, true);
 
 	free(converted_buf);
 }
@@ -1693,9 +1739,7 @@ static int process_client_cut_text(struct nvnc_client* client)
 	size_t msg_size = sizeof(*msg) + length;
 
 	if (msg_size <= left_to_process) {
-		nvnc_cut_text_fn fn = client->server->cut_text_fn;
-		if (fn)
-			fn(client, msg->text, length);
+		notify_cut_text(client, msg->text, length, false);
 
 		return msg_size;
 	}
@@ -1805,10 +1849,8 @@ static void process_big_cut_text(struct nvnc_client* client)
 					(unsigned char*)client->cut_text.buffer,
 					client->cut_text.length);
 	} else {
-		nvnc_cut_text_fn fn = client->server->cut_text_fn;
-		if (fn)
-			fn(client, client->cut_text.buffer,
-					client->cut_text.length);
+		notify_cut_text(client, client->cut_text.buffer,
+				client->cut_text.length, false);
 	}
 
 	free(client->cut_text.buffer);
@@ -3105,6 +3147,14 @@ EXPORT
 void nvnc_set_cut_text_fn(struct nvnc* self, nvnc_cut_text_fn fn)
 {
 	self->cut_text_fn = fn;
+	self->cut_text_utf8 = false;
+}
+
+EXPORT
+void nvnc_set_cut_text_utf8_fn(struct nvnc* self, nvnc_cut_text_fn fn)
+{
+	self->cut_text_fn = fn;
+	self->cut_text_utf8 = true;
 }
 
 EXPORT

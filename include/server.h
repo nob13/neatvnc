@@ -79,6 +79,7 @@ struct nvnc {
 	nvnc_normalised_pointer_fn normalised_pointer_fn;
 	nvnc_client_fn new_client_fn;
 	nvnc_cut_text_fn cut_text_fn;
+	bool cut_text_utf8;
 	struct cut_text ext_clipboard_provide_msg;
 	nvnc_desktop_layout_fn desktop_layout_fn;
 	int n_displays;

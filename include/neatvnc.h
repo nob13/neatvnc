@@ -339,9 +339,17 @@ void nvnc_set_normalised_pointer_fn(struct nvnc* self,
 void nvnc_set_new_client_fn(struct nvnc* self, nvnc_client_fn);
 
 /**
- * Set a handler for clipboard text received from clients.
+ * Set a handler for clipboard text received from clients. The text is passed
+ * to the handler in whichever encoding the client sent it (Latin-1 for legacy
+ * cut text, UTF-8 for extended clipboard).
  */
 void nvnc_set_cut_text_fn(struct nvnc*, nvnc_cut_text_fn fn);
+
+/**
+ * Set a handler for clipboard text received from clients. The text is always
+ * passed to the handler as UTF-8, converting from Latin-1 when necessary.
+ */
+void nvnc_set_cut_text_utf8_fn(struct nvnc*, nvnc_cut_text_fn fn);
 
 /**
  * Set a handler for desktop layout change requests from clients.
