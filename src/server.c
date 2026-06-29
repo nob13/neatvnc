@@ -36,6 +36,7 @@
 #include "transform-util.h"
 #include "type-macros.h"
 #include "server.h"
+#include "utf8.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1506,6 +1507,30 @@ static char* crlf_to_lf(const char* src, size_t len)
 	return lf_buf;
 }
 
+static void notify_cut_text(struct nvnc_client* client, const char* text,
+		uint32_t len, bool is_utf8)
+{
+	struct nvnc* server = client->server;
+
+	if (!server->cut_text_fn)
+		return;
+
+	if (is_utf8) {
+		server->cut_text_fn(client, text, len);
+		return;
+	}
+
+	size_t utf8_len;
+	char* utf8 = latin1_to_utf8(text, len, &utf8_len);
+	if (!utf8) {
+		nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+		return;
+	}
+
+	server->cut_text_fn(client, utf8, utf8_len);
+	free(utf8);
+}
+
 static void process_client_ext_clipboard_provide(struct nvnc_client* client,
 		unsigned char* zlib_data, size_t zlib_len)
 {
@@ -1575,9 +1600,7 @@ static void process_client_ext_clipboard_provide(struct nvnc_client* client,
 	}
 	size_t converted_len = strlen(converted_buf);
 
-	nvnc_cut_text_fn fn = client->server->cut_text_fn;
-	if (fn)
-		fn(client, converted_buf, converted_len);
+	notify_cut_text(client, converted_buf, converted_len, true);
 
 	free(converted_buf);
 }
@@ -1693,9 +1716,7 @@ static int process_client_cut_text(struct nvnc_client* client)
 	size_t msg_size = sizeof(*msg) + length;
 
 	if (msg_size <= left_to_process) {
-		nvnc_cut_text_fn fn = client->server->cut_text_fn;
-		if (fn)
-			fn(client, msg->text, length);
+		notify_cut_text(client, msg->text, length, false);
 
 		return msg_size;
 	}
@@ -1805,10 +1826,8 @@ static void process_big_cut_text(struct nvnc_client* client)
 					(unsigned char*)client->cut_text.buffer,
 					client->cut_text.length);
 	} else {
-		nvnc_cut_text_fn fn = client->server->cut_text_fn;
-		if (fn)
-			fn(client, client->cut_text.buffer,
-					client->cut_text.length);
+		notify_cut_text(client, client->cut_text.buffer,
+				client->cut_text.length, false);
 	}
 
 	free(client->cut_text.buffer);
@@ -1873,8 +1892,11 @@ static void send_cut_text_to_client(struct nvnc_client* client,
        stream_write(client->net_stream, text, len);
 }
 
-EXPORT
-void nvnc_send_cut_text(struct nvnc* server, const char* text, uint32_t len)
+/* Broadcast clipboard text. Extended clients are sent utf8_text and legacy
+ * clients latin1_text; the two may point at the same buffer when no conversion
+ * is needed. */
+static void send_cut_text(struct nvnc* server, const char* utf8_text,
+		uint32_t utf8_len, const char* latin1_text, uint32_t latin1_len)
 {
 	struct nvnc_client* client;
 
@@ -1887,7 +1909,7 @@ void nvnc_send_cut_text(struct nvnc* server, const char* text, uint32_t len)
 	}
 
 	if (ext_clipboard_in_use) {
-		ext_clipboard_save_provide_msg(server, text, len);
+		ext_clipboard_save_provide_msg(server, utf8_text, utf8_len);
 	} else if (server->ext_clipboard_provide_msg.buffer) {
 		free(server->ext_clipboard_provide_msg.buffer);
 		server->ext_clipboard_provide_msg.buffer = NULL;
@@ -1899,14 +1921,47 @@ void nvnc_send_cut_text(struct nvnc* server, const char* text, uint32_t len)
 				continue;
 
 			if (client->ext_clipboard_caps & RFB_EXT_CLIPBOARD_ACTION_PROVIDE &&
-					len <= client->ext_clipboard_max_unsolicited_text_size)
+					utf8_len <= client->ext_clipboard_max_unsolicited_text_size)
 				send_ext_clipboard_provide(client);
 			else if (client->ext_clipboard_caps & RFB_EXT_CLIPBOARD_ACTION_NOTIFY)
 				send_ext_clipboard_notify(client);
 		} else {
-			send_cut_text_to_client(client, text, len);
+			send_cut_text_to_client(client, latin1_text, latin1_len);
 		}
 	}
+}
+
+EXPORT
+void nvnc_send_cut_text(struct nvnc* server, const char* text, uint32_t len)
+{
+	/* text is UTF-8. Legacy clients need Latin-1, so convert only when one
+	 * is actually connected. */
+	struct nvnc_client* client;
+
+	bool legacy_in_use = false;
+	LIST_FOREACH (client, &server->clients, link) {
+		if (!client_has_encoding(client, RFB_ENCODING_EXTENDED_CLIPBOARD)) {
+			legacy_in_use = true;
+			break;
+		}
+	}
+
+	const char* latin1_text = text;
+	size_t latin1_len = len;
+	char* latin1_buf = NULL;
+
+	if (legacy_in_use) {
+		latin1_buf = utf8_to_latin1(text, len, &latin1_len);
+		if (!latin1_buf) {
+			nvnc_log(NVNC_LOG_ERROR, "OOM: %m");
+			return;
+		}
+		latin1_text = latin1_buf;
+	}
+
+	send_cut_text(server, text, len, latin1_text, latin1_len);
+
+	free(latin1_buf);
 }
 
 static struct nvnc_desktop_layout* unpack_desktop_layout(uint16_t width,
