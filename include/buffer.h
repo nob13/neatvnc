@@ -24,6 +24,7 @@
 #include "sys/queue.h"
 
 struct gbm_bo;
+struct __IOSurface;
 
 struct nvnc_buffer {
 	void* userdata;
@@ -39,6 +40,10 @@ struct nvnc_buffer {
 	/* dmabuf attributes */
 	struct gbm_bo* bo;
 	void* bo_map_handle;
+
+	/* IOSurface attributes */
+	struct __IOSurface* iosurface;
+	bool iosurface_locked;
 
 	struct weakref_observer pool;
 	TAILQ_ENTRY(nvnc_buffer) link;

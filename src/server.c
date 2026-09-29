@@ -3490,6 +3490,10 @@ double nvnc_rate_pixel_format(const struct nvnc* self,
 		nvnc_log(NVNC_LOG_ERROR, "modifier should be 0 for simple buffers");
 		return 0;
 	}
+	if (fb_type == NVNC_BUFFER_IOSURFACE && modifier) {
+		nvnc_log(NVNC_LOG_ERROR, "modifier should be 0 for IOSurface buffers");
+		return 0;
+	}
 	int max_depth = find_highest_client_depth(self);
 	return rate_pixel_format(format, modifier, 0, max_depth);
 }
@@ -3500,6 +3504,10 @@ double nvnc_rate_cursor_pixel_format(const struct nvnc* self,
 {
 	if (fb_type == NVNC_BUFFER_SIMPLE && modifier) {
 		nvnc_log(NVNC_LOG_ERROR, "modifier should be 0 for simple buffers");
+		return 0;
+	}
+	if (fb_type == NVNC_BUFFER_IOSURFACE && modifier) {
+		nvnc_log(NVNC_LOG_ERROR, "modifier should be 0 for IOSurface buffers");
 		return 0;
 	}
 	int max_depth = find_highest_client_depth(self);

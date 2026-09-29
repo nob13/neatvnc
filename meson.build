@@ -68,6 +68,9 @@ hogweed = dependency('hogweed', required: get_option('nettle'),
 gmp = dependency('gmp', required: get_option('nettle'))
 zlib = dependency('zlib')
 gbm = dependency('gbm', required: get_option('gbm'))
+iosurface = dependency('appleframeworks',
+	modules: ['CoreFoundation', 'CoreVideo', 'IOSurface'],
+	required: false)
 libdrm = dependency('libdrm', required: get_option('h264'))
 libsixel = dependency('libsixel', required: false)
 
@@ -216,6 +219,11 @@ endif
 if gbm.found()
 	dependencies += gbm
 	config.set('HAVE_GBM', true)
+endif
+
+if iosurface.found()
+	dependencies += iosurface
+	config.set('HAVE_IOSURFACE', true)
 endif
 
 have_ffmpeg = gbm.found() and libdrm.found() and libavcodec.found() and libavfilter.found() and libavutil.found()

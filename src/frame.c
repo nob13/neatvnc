@@ -32,6 +32,12 @@
 #include <gbm.h>
 #endif
 
+#ifdef HAVE_IOSURFACE
+#include <IOSurface/IOSurfaceRef.h>
+#include <CoreVideo/CVPixelBuffer.h>
+#include <libdrm/drm_fourcc.h>
+#endif
+
 #define EXPORT __attribute__((visibility("default")))
 
 EXPORT
@@ -138,6 +144,56 @@ struct nvnc_frame* nvnc_frame_from_gbm_bo(struct gbm_bo* bo)
 #endif
 }
 
+#ifdef HAVE_IOSURFACE
+static uint32_t iosurface_to_drm_format(OSType format)
+{
+	switch (format) {
+	case kCVPixelFormatType_32BGRA:
+		return DRM_FORMAT_ARGB8888;
+	case kCVPixelFormatType_ARGB2101010LEPacked:
+		return DRM_FORMAT_ARGB2101010;
+	}
+
+	return DRM_FORMAT_INVALID;
+}
+#endif
+
+EXPORT
+struct nvnc_frame* nvnc_frame_from_iosurface(struct __IOSurface* surface)
+{
+#ifdef HAVE_IOSURFACE
+	uint32_t format =
+		iosurface_to_drm_format(IOSurfaceGetPixelFormat(surface));
+	if (format == DRM_FORMAT_INVALID) {
+		nvnc_log(NVNC_LOG_ERROR, "Unsupported IOSurface pixel format");
+		return NULL;
+	}
+
+	struct nvnc_frame* fb = calloc(1, sizeof(*fb));
+	if (!fb)
+		return NULL;
+
+	fb->buffer = nvnc_buffer_from_iosurface(surface);
+	if (!fb->buffer) {
+		free(fb);
+		return NULL;
+	}
+
+	fb->ref = 1;
+	fb->width = IOSurfaceGetWidth(surface);
+	fb->height = IOSurfaceGetHeight(surface);
+	fb->fourcc_format = format;
+	fb->stride = 0;
+	fb->pts = NVNC_NO_PTS;
+	pixman_region_init_rect(&fb->damage, 0, 0, fb->width, fb->height);
+
+	return fb;
+#else
+	nvnc_log(NVNC_LOG_ERROR, "nvnc_frame_from_iosurface was not enabled during build time");
+	return NULL;
+#endif
+}
+
 EXPORT
 struct nvnc_buffer* nvnc_frame_get_buffer(const struct nvnc_frame* fb)
 {
@@ -196,6 +252,12 @@ EXPORT
 struct gbm_bo* nvnc_frame_get_gbm_bo(const struct nvnc_frame* fb)
 {
 	return fb->buffer->bo;
+}
+
+EXPORT
+struct __IOSurface* nvnc_frame_get_iosurface(const struct nvnc_frame* fb)
+{
+	return fb->buffer->iosurface;
 }
 
 EXPORT
