@@ -149,6 +149,12 @@ static bool have_working_h264_encoder(void)
 
 	return cached_result == 1;
 }
+
+static bool is_hw_buffer(const struct nvnc_frame* fb)
+{
+	return fb->buffer->type == NVNC_BUFFER_GBM_BO ||
+		fb->buffer->type == NVNC_BUFFER_IOSURFACE;
+}
 #endif // ENABLE_OPEN_H264
 
 static void client_drain_encoder(struct nvnc_client* client)
@@ -2827,7 +2833,7 @@ static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
 		case RFB_ENCODING_OPEN_H264:
 			// h264 is useless for sw frames
 			for (int i = 0; i < fb->n_fbs; ++i)
-				if (fb->fbs[i]->buffer->type != NVNC_BUFFER_GBM_BO)
+				if (!is_hw_buffer(fb->fbs[i]))
 					goto skip;
 			if (!have_working_h264_encoder())
 				break;
