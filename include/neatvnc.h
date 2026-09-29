@@ -66,6 +66,7 @@ struct nvnc_buffer;
 struct nvnc_buffer_pool;
 struct pixman_region16;
 struct gbm_bo;
+struct __IOSurface;
 
 enum nvnc_button_mask {
 	NVNC_BUTTON_LEFT = 1 << 0,
@@ -83,6 +84,7 @@ enum nvnc_buffer_type {
 	NVNC_BUFFER_UNSPEC = 0,
 	NVNC_BUFFER_SIMPLE,
 	NVNC_BUFFER_GBM_BO,
+	NVNC_BUFFER_IOSURFACE,
 };
 
 enum nvnc_stream_type {
@@ -464,6 +466,16 @@ struct nvnc_buffer* nvnc_buffer_from_addr(void* address);
 struct nvnc_buffer* nvnc_buffer_from_gbm_bo(struct gbm_bo* bo);
 
 /**
+ * Wrap an IOSurface into a buffer object.
+ *
+ * The buffer will have a type of NVNC_BUFFER_IOSURFACE.
+ *
+ * The nvnc_buffer object does not take over ownership of the IOSurface, so
+ * make sure to release it inside the cleanup callback for nvnc_buffer.
+ */
+struct nvnc_buffer* nvnc_buffer_from_iosurface(struct __IOSurface* surface);
+
+/**
  * Increment the reference count of the buffer.
  */
 void nvnc_buffer_ref(struct nvnc_buffer* self);
@@ -544,6 +556,16 @@ struct nvnc_frame* nvnc_frame_from_raw(void* buffer, uint16_t width,
  * dimensions and format of the bo to the frame object.
  */
 struct nvnc_frame* nvnc_frame_from_gbm_bo(struct gbm_bo* bo);
+
+/**
+ * Create a frame from an IOSurface.
+ *
+ * This function calls nvnc_buffer_from_iosurface() internally and assigns the
+ * dimensions and format of the surface to the frame object.
+ *
+ * Only 32 bit BGRA and 10 bit l10r surfaces are supported.
+ */
+struct nvnc_frame* nvnc_frame_from_iosurface(struct __IOSurface* surface);
 
 /**
  * Increment the reference count of the frame.
@@ -631,6 +653,11 @@ int nvnc_frame_get_pixel_size(const struct nvnc_frame* fb);
  * Get the GBM buffer object backing the frame, if any.
  */
 struct gbm_bo* nvnc_frame_get_gbm_bo(const struct nvnc_frame* fb);
+
+/**
+ * Get the IOSurface backing the frame, if any.
+ */
+struct __IOSurface* nvnc_frame_get_iosurface(const struct nvnc_frame* fb);
 
 /**
  * Get the rotation/flip transformation of the frame.
