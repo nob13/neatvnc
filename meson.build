@@ -71,12 +71,24 @@ gbm = dependency('gbm', required: get_option('gbm'))
 iosurface = dependency('appleframeworks',
 	modules: ['CoreFoundation', 'CoreVideo', 'IOSurface'],
 	required: false)
-libdrm = dependency('libdrm', required: get_option('h264'))
+
+# VideoToolbox is used for h264 on Apple platforms instead of ffmpeg or V4L2
+h264_drm = host_system in ['darwin', 'ios'] ? false : get_option('h264')
+
+libdrm = dependency('libdrm', required: h264_drm)
 libsixel = dependency('libsixel', required: false)
 
-libavcodec = dependency('libavcodec', required: get_option('h264'))
-libavfilter = dependency('libavfilter', required: get_option('h264'))
-libavutil = dependency('libavutil', required: get_option('h264'))
+libavcodec = dependency('libavcodec', required: h264_drm)
+libavfilter = dependency('libavfilter', required: h264_drm)
+libavutil = dependency('libavutil', required: h264_drm)
+
+have_videotoolbox = false
+if get_option('h264').allowed()
+	videotoolbox = dependency('appleframeworks',
+		modules: ['CoreFoundation', 'CoreMedia', 'CoreVideo', 'VideoToolbox'],
+		required: false)
+	have_videotoolbox = videotoolbox.found() and iosurface.found()
+endif
 
 libpng = dependency('libpng', required: false)
 
@@ -239,7 +251,16 @@ if have_v4l2
 	config.set('HAVE_V4L2', true)
 endif
 
-if have_ffmpeg or have_v4l2
+if have_videotoolbox
+	h264_videotoolbox_impl = declare_dependency(
+		sources: [ 'src/enc/h264/videotoolbox-impl.c' ],
+		dependencies: [ videotoolbox ]
+	)
+	dependencies += h264_videotoolbox_impl
+	config.set('HAVE_VIDEOTOOLBOX', true)
+endif
+
+if have_ffmpeg or have_v4l2 or have_videotoolbox
 	open_h264 = declare_dependency(
 		sources: [
 			'src/enc/h264/encoder.c',
