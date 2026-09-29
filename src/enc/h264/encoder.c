@@ -25,6 +25,10 @@ extern struct h264_encoder_impl h264_encoder_ffmpeg_impl;
 extern struct h264_encoder_impl h264_encoder_v4l2m2m_impl;
 #endif
 
+#ifdef HAVE_VIDEOTOOLBOX
+extern struct h264_encoder_impl h264_encoder_videotoolbox_impl;
+#endif
+
 struct h264_encoder* h264_encoder_create(uint32_t width, uint32_t height,
 		uint32_t format, int quality)
 {
@@ -39,6 +43,14 @@ struct h264_encoder* h264_encoder_create(uint32_t width, uint32_t height,
 
 #ifdef HAVE_FFMPEG
 	encoder = h264_encoder_ffmpeg_impl.create(width, height, format, quality);
+	if (encoder) {
+		return encoder;
+	}
+#endif
+
+#ifdef HAVE_VIDEOTOOLBOX
+	encoder = h264_encoder_videotoolbox_impl.create(width, height, format,
+			quality);
 	if (encoder) {
 		return encoder;
 	}
