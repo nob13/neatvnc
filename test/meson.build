@@ -21,6 +21,12 @@ utf8 = executable('utf8', 'test-utf8.c',
 )
 test('utf8', utf8)
 
+h264_sps = executable('h264-sps',
+	[ 'test-h264-sps.c', '../src/enc/h264/sps.c' ],
+	include_directories: inc,
+)
+test('h264-sps', h264_sps)
+
 if nettle.found() and python3.found()
 	rfb_test_server = executable('rfb-test-server', 'rfb-test-server.c',
 		include_directories: inc,

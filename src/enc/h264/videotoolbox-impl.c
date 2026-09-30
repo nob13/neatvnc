@@ -15,6 +15,7 @@
  */
 
 #include "enc/h264-encoder.h"
+#include "enc/h264-sps.h"
 #include "neatvnc.h"
 #include "frame.h"
 #include "sys/queue.h"
@@ -154,7 +155,18 @@ static int h264_encoder__append_parameter_sets(
 
 		vec_append(&self->current_packet, start_code,
 				sizeof(start_code));
-		vec_append(&self->current_packet, data, size);
+
+		/* VideoToolbox writes no bitstream restriction, so decoders
+		 * assume that frames may be reordered and hold some of them
+		 * back.
+		 */
+		uint8_t sps[H264_SPS_MAX_SIZE + H264_SPS_VUI_EXTRA_SIZE];
+		int sps_size = h264_sps_add_low_delay_vui(sps, sizeof(sps),
+				data, size);
+		if (sps_size > 0)
+			vec_append(&self->current_packet, sps, sps_size);
+		else
+			vec_append(&self->current_packet, data, size);
 	}
 
 	return 0;
