@@ -200,11 +200,13 @@ endif
 
 if not(have_crypto) and have_random
 	config.set('HAVE_VNC_AUTH', true)
-	sources += [
-		'src/crypto/random.c',
-		'src/crypto/des.c',
-		'src/auth/des-auth.c'
-	]
+	dependencies += declare_dependency(
+		sources: [
+			'src/crypto/random.c',
+			'src/crypto/des.c',
+			'src/auth/des-auth.c',
+		]
+	)
 endif
 
 if host_system == 'linux' and get_option('systemtap') and cc.has_header('sys/sdt.h')
