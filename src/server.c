@@ -1083,14 +1083,13 @@ static int decrement_pending_requests(struct nvnc_client* client)
 	return --client->n_pending_requests;
 }
 
-static void on_compositing_done(struct nvnc_composite_fb* cfb,
-		struct pixman_region16* frame_damage, void* userdata)
+static int encode_client_frame(struct nvnc_client* client,
+		struct nvnc_composite_fb* cfb,
+		struct pixman_region16* frame_damage)
 {
-	struct nvnc_client* client = userdata;
-
 	if (!ensure_encoder(client, cfb)) {
 		nvnc_log(NVNC_LOG_ERROR, "Failed to set up encoder");
-		return;
+		return -1;
 	}
 
 	encoder_set_quality(client->encoder, client->quality);
@@ -1098,7 +1097,30 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 	client->encoder->on_done = on_encode_frame_done;
 	client->encoder->userdata = client;
 
-	if (encoder_encode(client->encoder, cfb, frame_damage) >= 0) {
+	return encoder_encode(client->encoder, cfb, frame_damage);
+}
+
+static void on_compositing_done(struct nvnc_composite_fb* cfb,
+		struct pixman_region16* frame_damage, void* userdata)
+{
+	struct nvnc_client* client = userdata;
+
+	int rc = encode_client_frame(client, cfb, frame_damage);
+
+	/* The H.264 encoder may still fail for this frame, even though the
+	 * probe succeeded, e.g. because the frame exceeds the size limit of
+	 * the hardware. The client's next encoding is used instead.
+	 */
+	if (rc < 0 && client->encoder && encoder_get_type(client->encoder) ==
+			RFB_ENCODING_OPEN_H264) {
+		nvnc_log(NVNC_LOG_WARNING,
+				"H.264 encoding failed for client %p, falling back",
+				client);
+		client->is_h264_broken = true;
+		rc = encode_client_frame(client, cfb, frame_damage);
+	}
+
+	if (rc >= 0) {
 		if (client->n_pending_requests > 0)
 			--client->n_pending_requests;
 	} else {
@@ -2835,7 +2857,8 @@ static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
 			for (int i = 0; i < fb->n_fbs; ++i)
 				if (!is_hw_buffer(fb->fbs[i]))
 					goto skip;
-			if (!have_working_h264_encoder())
+			if (client->is_h264_broken ||
+					!have_working_h264_encoder())
 				break;
 			return client->encodings[i];
 #endif

@@ -262,22 +262,26 @@ static int open_h264_resize(struct open_h264_context* self, struct nvnc_frame* f
 	return 0;
 }
 
-static int open_h264_ctx_encode(struct open_h264_context* self, struct nvnc_frame* fb)
+static int open_h264_ctx_prepare(struct open_h264_context* self,
+		struct nvnc_frame* fb)
+{
+	if (fb->width == self->width && fb->height == self->height &&
+			fb->fourcc_format == self->format &&
+			!self->quality_changed)
+		return 0;
+
+	return open_h264_resize(self, fb);
+}
+
+static void open_h264_ctx_encode(struct open_h264_context* self,
+		struct nvnc_frame* fb)
 {
 	DTRACE_PROBE1(neatvnc, open_h264_encode, fb->pts);
-
-	if (fb->width != self->width || fb->height != self->height ||
-			fb->fourcc_format != self->format ||
-			self->quality_changed) {
-		if (open_h264_resize(self, fb) < 0)
-			return -1;
-	}
 
 	assert(self->width && self->height);
 
 	// TODO: encoder_feed should return an error code
 	h264_encoder_feed(self->encoder, fb);
-	return 0;
 }
 
 static struct open_h264_context* open_h264_find_context(struct open_h264* self,
@@ -332,6 +336,19 @@ static bool region_intersects_box(struct pixman_region16* region,
 	return overlap != PIXMAN_REGION_OUT;
 }
 
+static bool is_fb_damaged(const struct nvnc_frame* fb,
+		struct pixman_region16* damage)
+{
+	struct pixman_box16 box = {
+		.x1 = fb->x_off,
+		.y1 = fb->y_off,
+		.x2 = fb->x_off + fb->width,
+		.y2 = fb->y_off + fb->height,
+	};
+
+	return region_intersects_box(damage, &box);
+}
+
 static int open_h264_encode(struct encoder* enc,
 		struct nvnc_composite_fb* composite,
 		struct pixman_region16* damage)
@@ -346,26 +363,37 @@ static int open_h264_encode(struct encoder* enc,
 	self->frame_width = nvnc_composite_fb_width(composite);
 	self->frame_height = nvnc_composite_fb_height(composite);
 
+	/* All encoders are set up before any frame is fed, so that nothing is
+	 * in flight if one of them fails.
+	 */
 	for (int i = 0; i < composite->n_fbs; ++i) {
 		struct nvnc_frame* fb = composite->fbs[i];
 		assert(fb);
 
-		struct pixman_box16 box = {
-			.x1 = fb->x_off,
-			.y1 = fb->y_off,
-			.x2 = fb->x_off + fb->width,
-			.y2 = fb->y_off + fb->height,
-		};
-
-		if (!region_intersects_box(damage, &box))
+		if (!is_fb_damaged(fb, damage))
 			continue;
 
 		struct open_h264_context* ctx =
 			open_h264_get_context(self, fb->x_off, fb->y_off);
+		if (!ctx || open_h264_ctx_prepare(ctx, fb) < 0) {
+			nvnc_log(NVNC_LOG_ERROR,
+					"Failed to create H.264 encoder for %dx%d frame",
+					fb->width, fb->height);
+			return -1;
+		}
+	}
 
-		int rc = open_h264_ctx_encode(ctx, fb);
-		nvnc_assert(rc == 0, "Failed to encode frame");
+	for (int i = 0; i < composite->n_fbs; ++i) {
+		struct nvnc_frame* fb = composite->fbs[i];
 
+		if (!is_fb_damaged(fb, damage))
+			continue;
+
+		struct open_h264_context* ctx =
+			open_h264_find_context(self, fb->x_off, fb->y_off);
+		assert(ctx);
+
+		open_h264_ctx_encode(ctx, fb);
 		self->frame_barrier++;
 	}
 
@@ -385,7 +413,8 @@ static void open_h264_request_keyframe(struct encoder* enc)
 	for (int i = 0; i < self->n_contexts; ++i) {
 		struct open_h264_context* ctx = self->context[i];
 		assert(ctx);
-		h264_encoder_request_keyframe(ctx->encoder);
+		if (ctx->encoder)
+			h264_encoder_request_keyframe(ctx->encoder);
 	}
 }
 
