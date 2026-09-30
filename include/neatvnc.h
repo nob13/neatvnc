@@ -352,6 +352,13 @@ void nvnc_set_normalised_pointer_fn(struct nvnc* self,
 void nvnc_set_new_client_fn(struct nvnc* self, nvnc_client_fn);
 
 /**
+ * Set a callback that is invoked when the encodings available to a client
+ * have changed, i.e. when the client has set its encodings or when H.264
+ * encoding has failed for it. See nvnc_client_supports_h264().
+ */
+void nvnc_set_client_encodings_fn(struct nvnc* self, nvnc_client_fn);
+
+/**
  * Set a handler for clipboard text received from clients. The text is always
  * delivered to the handler as UTF-8; Latin-1 cut text is converted.
  */

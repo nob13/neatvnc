@@ -835,6 +835,13 @@ static void send_ping(struct nvnc_client* client, uint32_t prev_frame_size)
 			payload, sizeof(payload));
 }
 
+static void notify_client_encodings(struct nvnc_client* client)
+{
+	nvnc_client_fn fn = client->server->client_encodings_fn;
+	if (fn)
+		fn(client);
+}
+
 static int on_client_set_encodings(struct nvnc_client* client)
 {
 	struct rfb_client_set_encodings_msg* msg =
@@ -914,6 +921,8 @@ static int on_client_set_encodings(struct nvnc_client* client)
 
 	if (client_has_encoding(client, RFB_ENCODING_FENCE))
 		send_ping(client, 0);
+
+	notify_client_encodings(client);
 
 	return sizeof(*msg) + 4 * n_encodings;
 }
@@ -1106,6 +1115,7 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 	struct nvnc_client* client = userdata;
 
 	int rc = encode_client_frame(client, cfb, frame_damage);
+	bool h264_failed = false;
 
 	/* The H.264 encoder may still fail for this frame, even though the
 	 * probe succeeded, e.g. because the frame exceeds the size limit of
@@ -1117,6 +1127,7 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 				"H.264 encoding failed for client %p, falling back",
 				client);
 		client->is_h264_broken = true;
+		h264_failed = true;
 		rc = encode_client_frame(client, cfb, frame_damage);
 	}
 
@@ -1128,6 +1139,9 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 		client->is_updating = false;
 		client->formats_changed = false;
 	}
+
+	if (h264_failed)
+		notify_client_encodings(client);
 }
 
 /* TODO: This should be const but older versions of pixman do not use const for
@@ -3168,6 +3182,12 @@ EXPORT
 void nvnc_set_new_client_fn(struct nvnc* self, nvnc_client_fn fn)
 {
 	self->new_client_fn = fn;
+}
+
+EXPORT
+void nvnc_set_client_encodings_fn(struct nvnc* self, nvnc_client_fn fn)
+{
+	self->client_encodings_fn = fn;
 }
 
 EXPORT
