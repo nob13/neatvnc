@@ -2842,8 +2842,8 @@ static void process_pending_fence(struct nvnc_client* client)
 	process_client_messages(client);
 }
 
-static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
-		const struct nvnc_composite_fb* fb)
+static enum rfb_encodings choose_encoding(const struct nvnc_client* client,
+		bool is_hw_frame)
 {
 	for (size_t i = 0; i < client->n_encodings; ++i) {
 		switch (client->encodings[i]) {
@@ -2854,23 +2854,31 @@ static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
 #ifdef ENABLE_OPEN_H264
 		case RFB_ENCODING_OPEN_H264:
 			// h264 is useless for sw frames
-			for (int i = 0; i < fb->n_fbs; ++i)
-				if (!is_hw_buffer(fb->fbs[i]))
-					goto skip;
-			if (client->is_h264_broken ||
-					!have_working_h264_encoder())
-				break;
-			return client->encodings[i];
+			if (is_hw_frame && !client->is_h264_broken &&
+					have_working_h264_encoder())
+				return client->encodings[i];
+			break;
 #endif
 		default:
 			break;
 		}
-#ifdef ENABLE_OPEN_H264
-skip:;
-#endif
 	}
 
 	return RFB_ENCODING_RAW;
+}
+
+static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
+		const struct nvnc_composite_fb* fb)
+{
+	bool is_hw_frame = false;
+#ifdef ENABLE_OPEN_H264
+	is_hw_frame = true;
+	for (int i = 0; i < fb->n_fbs; ++i)
+		if (!is_hw_buffer(fb->fbs[i]))
+			is_hw_frame = false;
+#endif
+
+	return choose_encoding(client, is_hw_frame);
 }
 
 static bool client_has_encoding(const struct nvnc_client* client,
@@ -3279,6 +3287,12 @@ bool nvnc_client_supports_cursor(const struct nvnc_client* client)
 			return true;
 	}
 	return false;
+}
+
+EXPORT
+bool nvnc_client_supports_h264(const struct nvnc_client* client)
+{
+	return choose_encoding(client, true) == RFB_ENCODING_OPEN_H264;
 }
 
 static bool client_send_led_state(struct nvnc_client* client)

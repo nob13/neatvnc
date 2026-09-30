@@ -274,6 +274,13 @@ struct nvnc* nvnc_client_get_server(const struct nvnc_client* client);
 bool nvnc_client_supports_cursor(const struct nvnc_client* client);
 
 /**
+ * Check whether the client gets H.264 encoded updates when all displays are
+ * fed with GPU backed frames. This depends on the client's encodings and on
+ * whether H.264 encoding works on this machine, which the first call probes.
+ */
+bool nvnc_client_supports_h264(const struct nvnc_client* client);
+
+/**
  * Get the network address of the client.
  */
 int nvnc_client_get_address(const struct nvnc_client* client,
