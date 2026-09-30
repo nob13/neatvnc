@@ -568,9 +568,12 @@ static void h264_encoder__on_work_done(struct aml_work* work)
 		return;
 	}
 
+	/* An empty packet is still passed on, so that open-h264 can finish
+	 * the frame. The client has missed a frame, so it needs a key frame.
+	 */
 	if (self->current_packet.len == 0) {
 		nvnc_log(NVNC_LOG_WARNING, "Whoops, encoded packet length is 0");
-		return;
+		self->base.next_frame_should_be_keyframe = true;
 	}
 
 	void* userdata = self->base.userdata;
