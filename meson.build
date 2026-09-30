@@ -253,7 +253,10 @@ endif
 
 if have_videotoolbox
 	h264_videotoolbox_impl = declare_dependency(
-		sources: [ 'src/enc/h264/videotoolbox-impl.c' ],
+		sources: [
+			'src/enc/h264/videotoolbox-impl.c',
+			'src/enc/h264/sps.c',
+		],
 		dependencies: [ videotoolbox ]
 	)
 	dependencies += h264_videotoolbox_impl
