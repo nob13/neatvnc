@@ -64,6 +64,7 @@ struct nvnc_frame;
 struct nvnc_frame_pool;
 struct nvnc_buffer;
 struct nvnc_buffer_pool;
+struct nvnc_h264_encoder;
 struct pixman_region16;
 struct gbm_bo;
 
@@ -156,6 +157,15 @@ typedef bool (*nvnc_desktop_layout_fn)(
 struct nvnc_buffer_ops {
 	int (*map)(struct nvnc_buffer*, void** addr, int32_t* stride);
 	void (*unmap)(struct nvnc_buffer*);
+};
+
+struct nvnc_h264_encoder_impl {
+	int (*init)(struct nvnc_h264_encoder*, enum nvnc_buffer_type,
+			uint16_t width, uint16_t height, uint32_t format,
+			int quality);
+	void (*destroy)(struct nvnc_h264_encoder*);
+	void (*feed)(struct nvnc_h264_encoder*, struct nvnc_frame*,
+			bool keyframe);
 };
 
 extern const char nvnc_version[];
@@ -887,3 +897,35 @@ double nvnc_rate_cursor_pixel_format(const struct nvnc* self,
  * Since: 1.1.0
  */
 void nvnc_set_quirks(struct nvnc* self, enum nvnc_quirks value);
+
+/**
+ * Set an H.264 encoder implementation to be tried before the built-in ones.
+ * This must be called before any clients connect.
+ *
+ * init() returns -1 if the encoder cannot handle the given frames. Quality
+ * ranges from 1 (best) to 51 (worst). For each fed frame,
+ * nvnc_h264_encoder_packet_ready() must be called once from the main loop,
+ * but not from within feed().
+ *
+ * Since: 1.1.0
+ */
+void nvnc_set_h264_encoder_impl(const struct nvnc_h264_encoder_impl* impl);
+
+/**
+ * Since: 1.1.0
+ */
+void nvnc_h264_encoder_set_userdata(struct nvnc_h264_encoder* self,
+		void* userdata);
+
+/**
+ * Since: 1.1.0
+ */
+void* nvnc_h264_encoder_get_userdata(const struct nvnc_h264_encoder* self);
+
+/**
+ * Pass an encoded H.264 frame in Annex B format to the server.
+ *
+ * Since: 1.1.0
+ */
+void nvnc_h264_encoder_packet_ready(struct nvnc_h264_encoder* self,
+		const void* data, size_t size, uint64_t pts);
