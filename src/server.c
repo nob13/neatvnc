@@ -831,6 +831,13 @@ static void send_ping(struct nvnc_client* client, uint32_t prev_frame_size)
 			payload, sizeof(payload));
 }
 
+static void notify_client_encodings(struct nvnc_client* client)
+{
+	nvnc_client_fn fn = client->server->client_encodings_fn;
+	if (fn)
+		fn(client);
+}
+
 static int on_client_set_encodings(struct nvnc_client* client)
 {
 	struct rfb_client_set_encodings_msg* msg =
@@ -910,6 +917,8 @@ static int on_client_set_encodings(struct nvnc_client* client)
 
 	if (client_has_encoding(client, RFB_ENCODING_FENCE))
 		send_ping(client, 0);
+
+	notify_client_encodings(client);
 
 	return sizeof(*msg) + 4 * n_encodings;
 }
@@ -1100,6 +1109,7 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 		struct pixman_region16* frame_damage, void* userdata)
 {
 	struct nvnc_client* client = userdata;
+	bool h264_failed = false;
 
 	int rc = encode_client_frame(client, cfb, frame_damage);
 	if (rc < 0 && client->encoder && encoder_get_type(client->encoder) ==
@@ -1108,6 +1118,7 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 				"H.264 encoding failed for client %p, falling back",
 				client);
 		client->is_h264_broken = true;
+		h264_failed = true;
 		rc = encode_client_frame(client, cfb, frame_damage);
 	}
 
@@ -1119,6 +1130,9 @@ static void on_compositing_done(struct nvnc_composite_fb* cfb,
 		client->is_updating = false;
 		client->formats_changed = false;
 	}
+
+	if (h264_failed)
+		notify_client_encodings(client);
 }
 
 /* TODO: This should be const but older versions of pixman do not use const for
@@ -2834,8 +2848,8 @@ static void process_pending_fence(struct nvnc_client* client)
 	process_client_messages(client);
 }
 
-static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
-		const struct nvnc_composite_fb* fb)
+static enum rfb_encodings choose_encoding(const struct nvnc_client* client,
+		bool is_h264_frame)
 {
 	for (size_t i = 0; i < client->n_encodings; ++i) {
 		switch (client->encodings[i]) {
@@ -2845,26 +2859,34 @@ static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
 			return client->encodings[i];
 #ifdef ENABLE_OPEN_H264
 		case RFB_ENCODING_OPEN_H264:
-			// h264 is useless for sw frames
-			for (int i = 0; i < fb->n_fbs; ++i) {
-				struct nvnc_buffer* buf = fb->fbs[i]->buffer;
-				if (buf->type == NVNC_BUFFER_SIMPLE ||
-				    !have_working_h264_encoder(buf->type))
-					goto skip;
-			}
-			if (client->is_h264_broken)
+			if (!is_h264_frame || client->is_h264_broken)
 				break;
 			return client->encodings[i];
 #endif
 		default:
 			break;
 		}
-#ifdef ENABLE_OPEN_H264
-skip:;
-#endif
 	}
 
 	return RFB_ENCODING_RAW;
+}
+
+static enum rfb_encodings choose_frame_encoding(struct nvnc_client* client,
+		const struct nvnc_composite_fb* fb)
+{
+	bool is_h264_frame = false;
+#ifdef ENABLE_OPEN_H264
+	is_h264_frame = true;
+	for (int i = 0; i < fb->n_fbs; ++i) {
+		enum nvnc_buffer_type type = fb->fbs[i]->buffer->type;
+		// h264 is useless for sw frames
+		if (type == NVNC_BUFFER_SIMPLE ||
+				!have_working_h264_encoder(type))
+			is_h264_frame = false;
+	}
+#endif
+
+	return choose_encoding(client, is_h264_frame);
 }
 
 static bool client_has_encoding(const struct nvnc_client* client,
@@ -3157,6 +3179,12 @@ void nvnc_set_new_client_fn(struct nvnc* self, nvnc_client_fn fn)
 }
 
 EXPORT
+void nvnc_set_client_encodings_fn(struct nvnc* self, nvnc_client_fn fn)
+{
+	self->client_encodings_fn = fn;
+}
+
+EXPORT
 void nvnc_set_cut_text_fn(struct nvnc* self, nvnc_cut_text_fn fn)
 {
 	self->cut_text_fn = fn;
@@ -3273,6 +3301,18 @@ bool nvnc_client_supports_cursor(const struct nvnc_client* client)
 			return true;
 	}
 	return false;
+}
+
+EXPORT
+bool nvnc_client_supports_h264(const struct nvnc_client* client)
+{
+#ifdef ENABLE_OPEN_H264
+	bool have_encoder = have_working_h264_encoder(NVNC_BUFFER_GBM_BO) ||
+		have_working_h264_encoder(NVNC_BUFFER_CUSTOM);
+	return choose_encoding(client, have_encoder) == RFB_ENCODING_OPEN_H264;
+#else
+	return false;
+#endif
 }
 
 static bool client_send_led_state(struct nvnc_client* client)

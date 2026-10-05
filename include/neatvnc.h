@@ -288,6 +288,16 @@ struct nvnc* nvnc_client_get_server(const struct nvnc_client* client);
 bool nvnc_client_supports_cursor(const struct nvnc_client* client);
 
 /**
+ * Check whether the client can receive H.264 encoded frames.
+ *
+ * H.264 is only used for GPU buffers, so this can be used to decide what kind
+ * of buffers to feed.
+ *
+ * Since: 1.1.0
+ */
+bool nvnc_client_supports_h264(const struct nvnc_client* client);
+
+/**
  * Get the network address of the client.
  */
 int nvnc_client_get_address(const struct nvnc_client* client,
@@ -357,6 +367,15 @@ void nvnc_set_normalised_pointer_fn(struct nvnc* self,
  * Set a callback that is invoked when a new client connects.
  */
 void nvnc_set_new_client_fn(struct nvnc* self, nvnc_client_fn);
+
+/**
+ * Set a callback that gets called when a client's encodings change.
+ *
+ * This also happens when H.264 encoding fails for a client.
+ *
+ * Since: 1.1.0
+ */
+void nvnc_set_client_encodings_fn(struct nvnc* self, nvnc_client_fn);
 
 /**
  * Set a handler for clipboard text received from clients. The text is always
