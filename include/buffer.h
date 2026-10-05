@@ -40,6 +40,9 @@ struct nvnc_buffer {
 	struct gbm_bo* bo;
 	void* bo_map_handle;
 
+	/* custom buffer attributes */
+	const struct nvnc_buffer_ops* ops;
+
 	struct weakref_observer pool;
 	TAILQ_ENTRY(nvnc_buffer) link;
 };
