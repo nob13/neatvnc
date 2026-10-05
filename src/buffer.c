@@ -90,6 +90,29 @@ struct nvnc_buffer* nvnc_buffer_from_gbm_bo(struct gbm_bo* bo)
 }
 
 EXPORT
+struct nvnc_buffer* nvnc_buffer_from_custom(void* handle,
+		const struct nvnc_buffer_ops* ops)
+{
+	struct nvnc_buffer* buffer = calloc(1, sizeof(*buffer));
+	if (!buffer)
+		return NULL;
+
+	buffer->ref = 1;
+	buffer->type = NVNC_BUFFER_CUSTOM;
+	buffer->is_external = true;
+	buffer->custom_handle = handle;
+	buffer->ops = ops;
+
+	return buffer;
+}
+
+EXPORT
+void* nvnc_buffer_get_custom_handle(const struct nvnc_buffer* buffer)
+{
+	return buffer->custom_handle;
+}
+
+EXPORT
 void nvnc_buffer_ref(struct nvnc_buffer* buffer)
 {
 	buffer->ref++;
@@ -110,6 +133,8 @@ static void nvnc__buffer_free_internal(struct nvnc_buffer* buffer)
 		abort();
 #endif
 		break;
+	case NVNC_BUFFER_CUSTOM:
+		abort();
 	}
 }
 
@@ -145,6 +170,12 @@ void nvnc_buffer_unref(struct nvnc_buffer* buffer)
 int nvnc_buffer_map(struct nvnc_buffer* buffer, uint16_t width, uint16_t height,
 		int32_t* stride_out)
 {
+	if (buffer->type == NVNC_BUFFER_CUSTOM) {
+		if (buffer->addr)
+			return 0;
+		return buffer->ops->map(buffer, &buffer->addr, stride_out);
+	}
+
 #ifdef HAVE_GBM
 	if (buffer->type != NVNC_BUFFER_GBM_BO || buffer->bo_map_handle)
 		return 0;
@@ -166,6 +197,13 @@ int nvnc_buffer_map(struct nvnc_buffer* buffer, uint16_t width, uint16_t height,
 
 void nvnc_buffer_unmap(struct nvnc_buffer* buffer)
 {
+	if (buffer->type == NVNC_BUFFER_CUSTOM) {
+		if (buffer->addr)
+			buffer->ops->unmap(buffer);
+		buffer->addr = NULL;
+		return;
+	}
+
 #ifdef HAVE_GBM
 	if (buffer->type != NVNC_BUFFER_GBM_BO)
 		return;

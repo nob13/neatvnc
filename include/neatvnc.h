@@ -83,6 +83,7 @@ enum nvnc_buffer_type {
 	NVNC_BUFFER_UNSPEC = 0,
 	NVNC_BUFFER_SIMPLE,
 	NVNC_BUFFER_GBM_BO,
+	NVNC_BUFFER_CUSTOM,
 };
 
 enum nvnc_stream_type {
@@ -151,6 +152,11 @@ typedef void (*nvnc_cleanup_fn)(void* userdata);
 typedef void (*nvnc_log_fn)(const struct nvnc_log_data*, const char* message);
 typedef bool (*nvnc_desktop_layout_fn)(
 		struct nvnc_client*, const struct nvnc_desktop_layout*);
+
+struct nvnc_buffer_ops {
+	int (*map)(struct nvnc_buffer*, void** addr, int32_t* stride);
+	void (*unmap)(struct nvnc_buffer*);
+};
 
 extern const char nvnc_version[];
 
@@ -462,6 +468,24 @@ struct nvnc_buffer* nvnc_buffer_from_addr(void* address);
  * make sure to release/free it inside the cleanup callback for nvnc_buffer.
  */
 struct nvnc_buffer* nvnc_buffer_from_gbm_bo(struct gbm_bo* bo);
+
+/**
+ * Wrap a custom buffer handle into a buffer object.
+ *
+ * The buffer will have a type of NVNC_BUFFER_CUSTOM. The stride returned by
+ * map() is in bytes.
+ *
+ * Since: 1.1.0
+ */
+struct nvnc_buffer* nvnc_buffer_from_custom(void* handle,
+		const struct nvnc_buffer_ops* ops);
+
+/**
+ * Get the handle of a custom buffer.
+ *
+ * Since: 1.1.0
+ */
+void* nvnc_buffer_get_custom_handle(const struct nvnc_buffer* self);
 
 /**
  * Increment the reference count of the buffer.
