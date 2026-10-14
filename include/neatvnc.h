@@ -130,6 +130,10 @@ enum nvnc_quirks {
 	NVNC_QUIRK_NO_10BIT_FORMATS = 1 << 0,
 };
 
+enum nvnc_h264_encoder_frame_flags {
+	NVNC_H264_ENCODER_FRAME_KEYFRAME = 1 << 0,
+};
+
 struct nvnc_log_data {
 	size_t size;               /// Used by nvnc_default_logger
 	enum nvnc_log_level level; /// Log level
@@ -160,12 +164,12 @@ struct nvnc_buffer_impl {
 };
 
 struct nvnc_h264_encoder_impl {
-	int (*init)(struct nvnc_h264_encoder*, enum nvnc_buffer_type,
+	int (*create)(struct nvnc_h264_encoder*, enum nvnc_buffer_type,
 			uint16_t width, uint16_t height, uint32_t format,
 			int quality);
 	void (*destroy)(struct nvnc_h264_encoder*);
 	void (*feed)(struct nvnc_h264_encoder*, struct nvnc_frame*,
-			bool keyframe);
+			enum nvnc_h264_encoder_frame_flags);
 };
 
 extern const char nvnc_version[];
@@ -898,28 +902,42 @@ void nvnc_set_quirks(struct nvnc* self, enum nvnc_quirks value);
  *
  * Must be called before any clients connect.
  *
- * init() returns -1 if the encoder cannot handle the given frames. Quality
- * ranges from 1 (best) to 51 (worst). For each fed frame,
- * nvnc_h264_encoder_packet_ready() must be called once from the main loop,
- * but not from within feed().
+ * size: size of passed nvnc_h264_encoder_impl. Impl will be copied.
+ *
+ * create() returns -1 if the encoder cannot handle the given frames. Quality
+ * ranges from 1 (best) to 51 (worst).
+ *
+ * For each frame, the encoder must call nvnc_h264_encoder_packet_ready() once
+ * from the main loop, but not directly from feed().
  *
  * Since: 1.1.0
  */
-void nvnc_set_h264_encoder_impl(const struct nvnc_h264_encoder_impl* impl);
+int nvnc_set_h264_encoder_impl(const struct nvnc_h264_encoder_impl* impl,
+		size_t size);
 
 /**
+ * Set userdata.
+ *
+ * To be called by H.264 encoder implementations.
+ *
  * Since: 1.1.0
  */
 void nvnc_h264_encoder_set_userdata(struct nvnc_h264_encoder* self,
 		void* userdata);
 
 /**
+ * Get userdata.
+ *
+ * To be called by H.264 encoder implementations.
+ *
  * Since: 1.1.0
  */
 void* nvnc_h264_encoder_get_userdata(const struct nvnc_h264_encoder* self);
 
 /**
  * Pass an encoded H.264 frame in Annex B format to the server.
+ *
+ * To be called by H.264 encoder implementations.
  *
  * Since: 1.1.0
  */

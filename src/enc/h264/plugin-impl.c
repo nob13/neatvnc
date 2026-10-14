@@ -18,6 +18,7 @@
 #include "neatvnc.h"
 
 #include <stdlib.h>
+#include <string.h>
 
 #define EXPORT __attribute__((visibility("default")))
 
@@ -29,18 +30,39 @@ struct nvnc_h264_encoder {
 
 struct h264_encoder_impl h264_encoder_plugin_impl;
 
-static const struct nvnc_h264_encoder_impl* plugin_impl;
+static struct nvnc_h264_encoder_impl plugin_impl;
 
 EXPORT
-void nvnc_set_h264_encoder_impl(const struct nvnc_h264_encoder_impl* impl)
+int nvnc_set_h264_encoder_impl(const struct nvnc_h264_encoder_impl* impl,
+		size_t size)
 {
-	plugin_impl = impl;
+	memset(&plugin_impl, 0, sizeof(plugin_impl));
+
+	if (!impl)
+		return 0;
+
+	if (size > sizeof(plugin_impl)) {
+		nvnc_log(NVNC_LOG_ERROR,
+			"nvnc_h264_encoder_impl is newer than implementation");
+		return -1;
+	}
+
+	memcpy(&plugin_impl, impl, size);
+
+	if (!plugin_impl.create || !plugin_impl.destroy || !plugin_impl.feed) {
+		nvnc_log(NVNC_LOG_ERROR,
+			"nvnc_h264_encoder_impl is missing required methods");
+		memset(&plugin_impl, 0, sizeof(plugin_impl));
+		return -1;
+	}
+
+	return 0;
 }
 
 struct h264_encoder* h264_encoder_plugin_create(enum nvnc_buffer_type type,
 		uint32_t width, uint32_t height, uint32_t format, int quality)
 {
-	if (!plugin_impl)
+	if (!plugin_impl.create)
 		return NULL;
 
 	struct nvnc_h264_encoder* self = calloc(1, sizeof(*self));
@@ -49,9 +71,9 @@ struct h264_encoder* h264_encoder_plugin_create(enum nvnc_buffer_type type,
 
 	self->base.impl = &h264_encoder_plugin_impl;
 	self->base.next_frame_should_be_keyframe = true;
-	self->impl = plugin_impl;
+	self->impl = &plugin_impl;
 
-	if (plugin_impl->init(self, type, width, height, format, quality) < 0) {
+	if (plugin_impl.create(self, type, width, height, format, quality) < 0) {
 		free(self);
 		return NULL;
 	}
@@ -70,9 +92,11 @@ static void h264_encoder_plugin_feed(struct h264_encoder* base,
 		struct nvnc_frame* fb)
 {
 	struct nvnc_h264_encoder* self = (struct nvnc_h264_encoder*)base;
-	bool keyframe = base->next_frame_should_be_keyframe;
+	enum nvnc_h264_encoder_frame_flags flags = 0;
+	if (base->next_frame_should_be_keyframe)
+		flags |= NVNC_H264_ENCODER_FRAME_KEYFRAME;
 	base->next_frame_should_be_keyframe = false;
-	self->impl->feed(self, fb, keyframe);
+	self->impl->feed(self, fb, flags);
 }
 
 EXPORT
