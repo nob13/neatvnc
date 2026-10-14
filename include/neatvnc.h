@@ -84,7 +84,7 @@ enum nvnc_buffer_type {
 	NVNC_BUFFER_UNSPEC = 0,
 	NVNC_BUFFER_SIMPLE,
 	NVNC_BUFFER_GBM_BO,
-	NVNC_BUFFER_CUSTOM,
+	NVNC_BUFFER_CUSTOM = 255,
 };
 
 enum nvnc_stream_type {
@@ -154,7 +154,7 @@ typedef void (*nvnc_log_fn)(const struct nvnc_log_data*, const char* message);
 typedef bool (*nvnc_desktop_layout_fn)(
 		struct nvnc_client*, const struct nvnc_desktop_layout*);
 
-struct nvnc_buffer_ops {
+struct nvnc_buffer_impl {
 	int (*map)(struct nvnc_buffer*, void** addr, int32_t* stride);
 	void (*unmap)(struct nvnc_buffer*);
 };
@@ -482,12 +482,15 @@ struct nvnc_buffer* nvnc_buffer_from_gbm_bo(struct gbm_bo* bo);
 /**
  * Create a buffer object that is mapped via the given operations.
  *
+ * size: size of passed nvnc_buffer_impl. Impl will be copied.
+ *
  * The buffer will have a type of NVNC_BUFFER_CUSTOM. The stride returned by
  * map() is in bytes.
  *
  * Since: 1.1.0
  */
-struct nvnc_buffer* nvnc_buffer_from_custom(const struct nvnc_buffer_ops* ops);
+struct nvnc_buffer* nvnc_buffer_from_custom(const struct nvnc_buffer_impl* impl,
+		size_t size);
 
 /**
  * Increment the reference count of the buffer.
