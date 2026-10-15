@@ -24,6 +24,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <ctype.h>
+#include <errno.h>
 #ifdef __STDC_NO_THREADS__
 #define thread_local _Thread_local
 #else
@@ -89,12 +90,42 @@ static const char* log_level_to_string(enum nvnc_log_level level)
 	return "UNKNOWN";
 }
 
+#ifdef _WIN32
+/* The UCRT does not know %m */
+static const char* expand_errno(char* dst, size_t size, const char* fmt)
+{
+	const char* err = strerror(errno);
+	size_t n = 0;
+
+	for (; *fmt && n + 2 < size; ++fmt) {
+		if (fmt[0] == '%' && fmt[1] == 'm') {
+			for (const char* e = err; *e && n + 3 < size; ++e) {
+				if (*e == '%')
+					dst[n++] = '%';
+				dst[n++] = *e;
+			}
+			++fmt;
+			continue;
+		}
+		if (fmt[0] == '%' && fmt[1] == '%')
+			dst[n++] = *fmt++;
+		dst[n++] = *fmt;
+	}
+	dst[n] = '\0';
+	return dst;
+}
+#endif
+
 static void nvnc__vlog(const struct nvnc_log_data* meta, const char* fmt,
 		va_list args)
 {
 	char message[1024];
 
 	if (meta->level <= log_level && strstr(meta->file, log_filter)) {
+#ifdef _WIN32
+		char expanded[1024];
+		fmt = expand_errno(expanded, sizeof(expanded), fmt);
+#endif
 		vsnprintf(message, sizeof(message), fmt, args);
 		get_log_fn()(meta, trim(message));
 	}
