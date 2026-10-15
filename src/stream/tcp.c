@@ -34,6 +34,10 @@
 #include "sys/queue.h"
 #include "neatvnc.h"
 
+#ifdef _WIN32
+#define close(fd) closesocket(fd)
+#endif
+
 static_assert(sizeof(struct stream) <= STREAM_ALLOC_SIZE,
 		"struct stream has grown too large, increase STREAM_ALLOC_SIZE");
 
@@ -197,7 +201,13 @@ ssize_t stream_tcp_read(struct stream* self, void* dst, size_t size)
 		read_buffer = self->tmp_buf.data;
 	}
 
+#ifdef _WIN32
+	ssize_t rc = recv(self->fd, (char*)read_buffer, size, 0);
+	if (rc < 0)
+		errno = WSAGetLastError() == WSAEWOULDBLOCK ? EAGAIN : EPIPE;
+#else
 	ssize_t rc = read(self->fd, read_buffer, size);
+#endif
 	if (rc == 0)
 		stream__remote_closed(self);
 	if (rc > 0)

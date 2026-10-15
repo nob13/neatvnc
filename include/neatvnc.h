@@ -22,7 +22,12 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <assert.h>
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
 #include <sys/socket.h>
+#endif
 
 #define NVNC_NO_PTS UINT64_MAX
 

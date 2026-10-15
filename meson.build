@@ -87,6 +87,7 @@ else
 endif
 
 inc = include_directories('include')
+private_inc = []
 
 sources_dep = declare_dependency(
 	sources: [
@@ -132,6 +133,16 @@ dependencies = [
 	sources_dep,
 ]
 
+if host_system == 'windows'
+	if cc.get_argument_syntax() == 'msvc'
+		private_inc = include_directories('compat/win32')
+	endif
+	dependencies += [
+		cc.find_library('ws2_32'),
+		cc.find_library('bcrypt'),
+	]
+endif
+
 enable_websocket = false
 
 config = configuration_data()
@@ -169,6 +180,10 @@ if cc.has_function(
 	prefix: '#include <stdlib.h>'
 )
 	config.set('HAVE_ARC4RANDOM', true)
+	have_random = true
+endif
+
+if host_system == 'windows'
 	have_random = true
 endif
 
@@ -289,7 +304,7 @@ neatvnc = library(
 	[],
 	version: library_version,
 	dependencies: dependencies,
-	include_directories: inc,
+	include_directories: [inc, private_inc],
 	install: true,
 )
 

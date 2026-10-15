@@ -26,6 +26,9 @@
 #include "neatvnc.h"
 #elif defined(HAVE_ARC4RANDOM)
 #include <stdlib.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#include <bcrypt.h>
 #endif
 
 
@@ -45,6 +48,8 @@ void crypto_random(uint8_t* dst, size_t len)
 	}
 #elif defined(HAVE_ARC4RANDOM)
 	arc4random_buf(dst, len);
+#elif defined(_WIN32)
+	BCryptGenRandom(NULL, dst, len, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
 #else
 #error No random generator available
 #endif

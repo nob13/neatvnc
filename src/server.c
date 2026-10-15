@@ -88,6 +88,10 @@
 
 #define EXPORT __attribute__((visibility("default")))
 
+#ifdef _WIN32
+#define close(fd) closesocket(fd)
+#endif
+
 static int send_desktop_resize_rect(struct nvnc_client* client,
 		const struct nvnc_desktop_layout* layout);
 static bool client_supports_resizing(const struct nvnc_client* client);

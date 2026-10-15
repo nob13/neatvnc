@@ -45,7 +45,11 @@ struct nvnc_buffer* nvnc_buffer_new(size_t size)
 	size_t alignment = MAX(4, sizeof(void*));
 	size_t aligned_size = ALIGN_UP(size, alignment);
 
+#ifdef _WIN32
+	buffer->addr = _aligned_malloc(aligned_size, alignment);
+#else
 	buffer->addr = aligned_alloc(alignment, aligned_size);
+#endif
 	if (!buffer->addr) {
 		free(buffer);
 		return NULL;
@@ -124,7 +128,11 @@ static void nvnc__buffer_free_internal(struct nvnc_buffer* buffer)
 	case NVNC_BUFFER_UNSPEC:
 		abort();
 	case NVNC_BUFFER_SIMPLE:
+#ifdef _WIN32
+		_aligned_free(buffer->addr);
+#else
 		free(buffer->addr);
+#endif
 		break;
 	case NVNC_BUFFER_GBM_BO:
 #ifdef HAVE_GBM
