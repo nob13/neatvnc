@@ -58,6 +58,7 @@
 #include <netinet/tcp.h>
 #include <zlib.h>
 #include <tgmath.h>
+#include <time.h>
 
 #ifdef ENABLE_TLS
 #include <gnutls/gnutls.h>
@@ -2503,7 +2504,7 @@ static void on_connection(struct aml_handler* poll_handle)
 	}
 
 	int one = 1;
-	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &one, sizeof(one));
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const void*)&one, sizeof(one));
 
 #ifdef ENABLE_WEBSOCKET
 	if (socket->type == NVNC_STREAM_WEBSOCKET)
@@ -2621,7 +2622,8 @@ static int bind_address_tcp(const char* name, int port)
 		}
 
 		int one = 1;
-		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(int)) < 0) {
+		if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, (const void*)&one,
+					sizeof(int)) < 0) {
 			nvnc_log(NVNC_LOG_DEBUG, "Failed to set SO_REUSEADDR: %m");
 			goto failure;
 		}
